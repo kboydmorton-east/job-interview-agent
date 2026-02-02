@@ -69,68 +69,67 @@ Start the conversation by asking:
 `;
 
     // -----------------------------
-    // 2. BASIC REAL-TIME VOICE LOOP
+    // 2. TWO-CLICK VOICE LOOP
     // -----------------------------
-  let mediaRecorder;
-  let audioChunks = [];
-  let isRecording = false;
+    let mediaRecorder;
+    let audioChunks = [];
+    let isRecording = false;
 
-  async function startRecording() {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
+    async function startRecording() {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
 
-    audioChunks = [];
-    mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+      audioChunks = [];
+      mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
 
-    mediaRecorder.start();
-    isRecording = true;
-    document.getElementById("startBtn").innerText = "Listening…";
-  }
+      mediaRecorder.start();
+      isRecording = true;
 
-  async function stopRecordingAndSend() {
-    return new Promise((resolve) => {
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+      document.getElementById("startBtn").innerText = "Listening…";
+    }
 
-        const response = await fetch("https://cool-field-e495.kboydmorton.workers.dev/", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            audio: await audioBlob.arrayBuffer(),
-            system: systemPrompt
-          })
-        });
+    async function stopRecordingAndSend() {
+      return new Promise((resolve) => {
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
 
-        const result = await response.json();
+          const response = await fetch("https://cool-field-e495.kboydmorton.workers.dev/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              audio: await audioBlob.arrayBuffer(),
+              system: systemPrompt
+            })
+          });
 
-        // Play AI response
-        const audio = new Audio("data:audio/wav;base64," + result.audio_base64);
-        audio.play();
+          const result = await response.json();
 
-        audio.onended = () => {
-          document.getElementById("startBtn").innerText = "Start Talking";
-          isRecording = false;
+          // Play AI response
+          const audio = new Audio("data:audio/wav;base64," + result.audio_base64);
+          audio.play();
+
+          audio.onended = () => {
+            document.getElementById("startBtn").innerText = "Start Talking";
+            isRecording = false;
+          };
+
+          resolve();
         };
 
-        resolve();
-      };
-
-      mediaRecorder.stop();
-    });
-  }
-
-  document.getElementById("startBtn").onclick = async () => {
-    if (!isRecording) {
-      // First click → start recording
-      startRecording();
-    } else {
-      // Second click → stop + send audio
-      document.getElementById("startBtn").innerText = "Processing…";
-      await stopRecordingAndSend();
+        mediaRecorder.stop();
+      });
     }
-  };
-</script>
 
+    document.getElementById("startBtn").onclick = async () => {
+      if (!isRecording) {
+        // First click → start recording
+        startRecording();
+      } else {
+        // Second click → stop + send audio
+        document.getElementById("startBtn").innerText = "Processing…";
+        await stopRecordingAndSend();
+      }
+    };
+  </script>
 </body>
 </html>
-
