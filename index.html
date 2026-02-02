@@ -109,6 +109,11 @@ Start the conversation by asking:
 
       isRecording = true;
       mediaRecorder.start();
+
+      // ⬇️ Automatically stop recording after 2 seconds
+      setTimeout(() => {
+        mediaRecorder.stop();
+      }, 2000);
     }
 
     document.getElementById("startBtn").onclick = () => {
@@ -120,6 +125,3 @@ Start the conversation by asking:
   </script>
 </body>
 </html>
-
-
-
