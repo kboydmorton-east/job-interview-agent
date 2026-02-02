@@ -25,6 +25,15 @@
     }
     button:active {
       background: #005a9e;
+
+      #startBtn {
+        position: relative;
+        z-index: 999999999 !important;
+        pointer-events: auto !important;
+      }
+      body * {
+        pointer-events: auto !important;
+      }
     }
   </style>
 </head>
@@ -157,3 +166,4 @@ Start the conversation by asking:
   </script>
 </body>
 </html>
+
