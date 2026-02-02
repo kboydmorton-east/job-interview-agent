@@ -69,80 +69,91 @@ Start the conversation by asking:
 `;
 
     // -----------------------------
-    // 2. TWO-CLICK VOICE LOOP
+    // 2. TWO-CLICK VOICE LOOP WITH MIME FIX
     // -----------------------------
-    <script>
-  const systemPrompt = `
-  (your full system prompt stays the same)
-  `;
+    let mediaRecorder;
+    let audioChunks = [];
+    let isRecording = false;
 
-  let mediaRecorder;
-  let audioChunks = [];
-  let isRecording = false;
+    async function startRecording() {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-  async function startRecording() {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
+      // MIME TYPE FIX + FALLBACKS
+      let options = { mimeType: "audio/webm; codecs=opus" };
 
-    audioChunks = [];
-    mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        console.warn("opus not supported, falling back to audio/webm");
+        options = { mimeType: "audio/webm" };
+      }
 
-    mediaRecorder.start();
-    isRecording = true;
-    console.log("Recording started. isRecording =", isRecording);
-    document.getElementById("startBtn").innerText = "Listening…";
-  }
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        console.warn("audio/webm not supported, using default format");
+        options = {};
+      }
 
-  async function stopRecordingAndSend() {
-    console.log("Second click received. Stopping recording…");
+      console.log("Using recorder options:", options);
 
-    return new Promise((resolve) => {
-      mediaRecorder.onstop = async () => {
-        console.log("Recording stopped. Sending audio…");
+      mediaRecorder = new MediaRecorder(stream, options);
 
-        const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+      audioChunks = [];
+      mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
 
-        const response = await fetch("https://cool-field-e495.kboydmorton.workers.dev/", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            audio: await audioBlob.arrayBuffer(),
-            system: systemPrompt
-          })
-        });
+      mediaRecorder.start();
+      isRecording = true;
 
-        const result = await response.json();
+      console.log("Recording started. isRecording =", isRecording);
+      document.getElementById("startBtn").innerText = "Listening…";
+    }
 
-        const audio = new Audio("data:audio/wav;base64," + result.audio_base64);
-        audio.play();
+    async function stopRecordingAndSend() {
+      console.log("Second click received. Stopping recording…");
 
-        audio.onended = () => {
-          document.getElementById("startBtn").innerText = "Start Talking";
-          isRecording = false;
+      return new Promise((resolve) => {
+        mediaRecorder.onstop = async () => {
+          console.log("Recording stopped. Sending audio…");
+
+          const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+
+          const response = await fetch("https://cool-field-e495.kboydmorton.workers.dev/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              audio: await audioBlob.arrayBuffer(),
+              system: systemPrompt
+            })
+          });
+
+          const result = await response.json();
+
+          const audio = new Audio("data:audio/wav;base64," + result.audio_base64);
+          audio.play();
+
+          audio.onended = () => {
+            document.getElementById("startBtn").innerText = "Start Talking";
+            isRecording = false;
+          };
+
+          resolve();
         };
 
-        resolve();
-      };
-
-      try {
-        mediaRecorder.stop();
-      } catch (err) {
-        console.error("Error stopping recorder:", err);
-        isRecording = false;
-        document.getElementById("startBtn").innerText = "Start Talking";
-      }
-    });
-  }
-
-  document.getElementById("startBtn").onclick = async () => {
-    if (!isRecording) {
-      await startRecording();
-    } else {
-      document.getElementById("startBtn").innerText = "Processing…";
-      await stopRecordingAndSend();
+        try {
+          mediaRecorder.stop();
+        } catch (err) {
+          console.error("Error stopping recorder:", err);
+          isRecording = false;
+          document.getElementById("startBtn").innerText = "Start Talking";
+        }
+      });
     }
-  };
-</script>
 
-
-
+    document.getElementById("startBtn").onclick = async () => {
+      if (!isRecording) {
+        await startRecording();
+      } else {
+        document.getElementById("startBtn").innerText = "Processing…";
+        await stopRecordingAndSend();
+      }
+    };
+  </script>
+</body>
+</html>
