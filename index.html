@@ -71,21 +71,27 @@ Start the conversation by asking:
     // -----------------------------
     // 2. BASIC REAL-TIME VOICE LOOP
     // -----------------------------
-    let mediaRecorder;
-    let audioChunks = [];
-    let isRecording = false;
+  let mediaRecorder;
+  let audioChunks = [];
+  let isRecording = false;
 
-    async function startConversation() {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
+  async function startRecording() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
 
-      mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+    audioChunks = [];
+    mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
 
+    mediaRecorder.start();
+    isRecording = true;
+    document.getElementById("startBtn").innerText = "Listening…";
+  }
+
+  async function stopRecordingAndSend() {
+    return new Promise((resolve) => {
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
-        audioChunks = [];
 
-        // Send audio to your model endpoint
         const response = await fetch("https://cool-field-e495.kboydmorton.workers.dev/", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -97,31 +103,34 @@ Start the conversation by asking:
 
         const result = await response.json();
 
-        // Play the model's spoken reply
+        // Play AI response
         const audio = new Audio("data:audio/wav;base64," + result.audio_base64);
         audio.play();
 
-        // Restart listening after the model finishes speaking
         audio.onended = () => {
-          if (isRecording) mediaRecorder.start();
+          document.getElementById("startBtn").innerText = "Start Talking";
+          isRecording = false;
         };
+
+        resolve();
       };
 
-      isRecording = true;
-      mediaRecorder.start();
+      mediaRecorder.stop();
+    });
+  }
 
-      // ⬇️ Automatically stop recording after 2 seconds
-      setTimeout(() => {
-        mediaRecorder.stop();
-      }, 2000);
+  document.getElementById("startBtn").onclick = async () => {
+    if (!isRecording) {
+      // First click → start recording
+      startRecording();
+    } else {
+      // Second click → stop + send audio
+      document.getElementById("startBtn").innerText = "Processing…";
+      await stopRecordingAndSend();
     }
+  };
+</script>
 
-    document.getElementById("startBtn").onclick = () => {
-      if (!isRecording) {
-        startConversation();
-        document.getElementById("startBtn").innerText = "Listening…";
-      }
-    };
-  </script>
 </body>
 </html>
+
