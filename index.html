@@ -4,46 +4,43 @@
   <meta charset="UTF-8" />
   <title>Job Interview Practice – Voice Only</title>
   <style>
-    body {
+    body{
       font-family: Arial, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      margin: 0;
-      background: #f5f5f5;
-      gap: 16px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      height:100vh;
+      margin:0;
+      background:#f5f5f5;
+      gap:16px;
     }
-
-    button {
-      font-size: 1.5rem;
-      padding: 20px 40px;
-      border: none;
-      border-radius: 12px;
-      background: #0078d4;
-      color: white;
-      cursor: pointer;
+    button{
+      font-size:1.5rem;
+      padding:20px 40px;
+      border:none;
+      border-radius:12px;
+      background:#0078d4;
+      color:white;
+      cursor:pointer;
     }
+    button:active{ background:#005a9e; }
+    button:disabled{ opacity:.7; cursor:not-allowed; }
 
-    button:active { background: #005a9e; }
-    button:disabled { opacity: 0.7; cursor: not-allowed; }
-
-    #status {
-      font-size: 0.95rem;
-      color: #333;
-      background: #fff;
-      border: 1px solid #ddd;
-      padding: 10px 14px;
-      border-radius: 10px;
-      max-width: 820px;
-      width: calc(100% - 48px);
-      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    #status{
+      font-size:.95rem;
+      color:#333;
+      background:#fff;
+      border:1px solid #ddd;
+      padding:10px 14px;
+      border-radius:10px;
+      max-width:820px;
+      width:calc(100% - 48px);
+      box-shadow:0 2px 8px rgba(0,0,0,.05);
     }
-
-    #status code {
+    #status code{
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      font-size: 0.9rem;
+      font-size:.9rem;
     }
   </style>
 </head>
@@ -54,82 +51,207 @@
 
   <script>
     // -----------------------------
-    // 1) SYSTEM PROMPT
+    // SYSTEM PROMPT
     // -----------------------------
     const systemPrompt = `
-You are a supportive conversation partner for 9th-grade multilingual learners at WIDA Level 2. You are speaking one-on-one with a student about a job or career they researched. The student will speak their responses aloud, so expect short or simple answers.
-
-Your overall job is to keep the conversation natural, warm, and curious. Speak the way a patient, engaging teacher would: clear, human, and interested, but never fake or overly enthusiastic.
-
-Your goals:
-- Help the student explain their ideas about the career they chose.
-- Ask meaningful follow-up questions that feel like a normal conversation.
-- Keep language accessible but not childish; use 9th-grade vocabulary.
-- Encourage deeper thinking, including gentle challenges when appropriate.
-- Support academic English by using academic language naturally and offering light language support (e.g., suggesting connectors like “because” or “for example”).
-- Do NOT give sentence frames unless the student clearly asks for help or says they don’t know what to say.
-
-Sentence frame rule:
-Only provide a sentence frame if the student says something like:
-“I don’t know,” “I need help,” “I don’t know how to say it,” or “I’m not sure what to say.”
-When this happens, offer ONE simple sentence frame and ONE short example answer that sounds like a real student.
-
-Tone:
-Friendly, calm, conversational. Encouraging but not overly enthusiastic. Acknowledge interesting ideas without overpraising. Correct misunderstandings gently. Speak only in English.
-
-Response format:
-- Speak in 1–3 sentences unless a slightly longer answer feels natural.
-- Ask one clear follow-up question every turn.
-- You may suggest one helpful academic language element (e.g., “because,” “for example,” “one reason…”).
-- Only include a sentence frame when the student explicitly asks for help.
-- When giving a sentence frame, include one short example answer.
-
+You are a supportive conversation partner for 9th-grade multilingual learners at WIDA Level 2...
 Start the conversation by asking:
 “What job or career did you choose to research?”
-`;
+`.trim();
 
     // -----------------------------
-    // 2) SIMPLE CLIENT-SIDE MEMORY
+    // BASIC UI HELPERS
     // -----------------------------
-    const messages = []; // we keep just user/assistant turns; system stays separate
+    const statusEl = document.getElementById("status");
+    function setStatus(msg) {
+      statusEl.innerHTML = `<strong>Status:</strong> ${msg}`;
+      console.log("[STATUS]", msg);
+    }
 
     // -----------------------------
-    // 3) VOICE RECORDING + SEND
+    // SAFETY CHECKS ON LOAD
     // -----------------------------
-    let mediaRecorder;
+    setStatus("Script loaded. Checking browser support…");
+
+    const btn = document.getElementById("startBtn");
+    if (!btn) {
+      setStatus("❌ ERROR: Button not found (startBtn).");
+      throw new Error("Button #startBtn not found.");
+    }
+
+    // Check if getUserMedia exists
+    const hasMediaDevices = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    setStatus(
+      hasMediaDevices
+        ? "✅ Ready. Click Start Talking."
+        : "❌ Your browser/page doesn't support microphone recording (mediaDevices missing)."
+    );
+
+    // -----------------------------
+    // STATE
+    // -----------------------------
+    let mediaRecorder = null;
     let audioChunks = [];
     let isRecording = false;
     let stream = null;
+    const messages = [];
 
-    const btn = document.getElementById("startBtn");
-    const statusEl = document.getElementById("status");
-
-    function setStatus(msg) {
-      statusEl.innerHTML = `<strong>Status:</strong> ${msg}`;
-      console.log(msg);
-    }
-
+    // Convert Blob -> base64 string for JSON
     function blobToBase64(blob) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64 = String(reader.result).split(",")[1]; // remove "data:..."
-          resolve(base64);
-        };
+        reader.onloadend = () => resolve(String(reader.result).split(",")[1]);
         reader.onerror = reject;
         reader.readAsDataURL(blob);
       });
     }
 
     async function startRecording() {
+      if (!hasMediaDevices) {
+        setStatus("❌ No microphone API available in this context.");
+        return;
+      }
+
+      setStatus("Requesting microphone permission… (watch for browser prompt)");
+
+      // IMPORTANT: this will fail on insecure contexts (http/file) in many cases
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      let options = { mimeType: "audio/webm; codecs=opus" };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) options = { mimeType: "audio/webm" };
+      if (options.mimeType && !MediaRecorder.isTypeSupported(options.mimeType)) options = {};
+
+      mediaRecorder = new MediaRecorder(stream, options);
+      audioChunks = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) audioChunks.push(e.data);
+      };
+
+      mediaRecorder.onerror = (e) => {
+        console.error("Recorder error:", e);
+        setStatus("❌ Recorder error (see console).");
+      };
+
+      mediaRecorder.start();
+      isRecording = true;
+      btn.innerText = "Listening…";
+      setStatus(`Listening… Click again to stop. <code>${options.mimeType || "default"}</code>`);
+    }
+
+    async function stopRecordingAndSend() {
+      btn.innerText = "Processing…";
+      btn.disabled = true;
+      setStatus("Stopping recording…");
+
+      return new Promise((resolve) => {
+        mediaRecorder.addEventListener("stop", async () => {
+          try {
+            if (stream) {
+              stream.getTracks().forEach(t => t.stop());
+              stream = null;
+            }
+
+            const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+            setStatus(`Audio captured: <code>${audioBlob.size}</code> bytes`);
+
+            if (audioBlob.size < 800) throw new Error("Audio too small. Speak longer/louder.");
+
+            const audio_base64 = await blobToBase64(audioBlob);
+
+            setStatus("Sending to Cloudflare Worker…");
+
+            const res = await fetch("https://cool-field-e495.kboydmorton.workers.dev/", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                audio_base64,
+                mime_type: "audio/webm",
+                system: systemPrompt,
+                messages
+              })
+            });
+
+            if (!res.ok) {
+              const text = await res.text();
+              throw new Error(`Worker error ${res.status}: ${text}`);
+            }
+
+            const result = await res.json();
+
+            if (result.transcript) messages.push({ role: "user", content: result.transcript });
+            if (result.assistant_text) messages.push({ role: "assistant", content: result.assistant_text });
+
+            setStatus(`You: <code>${result.transcript || ""}</code><br>Bot: <code>${result.assistant_text || ""}</code>`);
+
+            const mime = result.audio_mime || "audio/wav";
+            const audio = new Audio(`data:${mime};base64,${result.audio_base64}`);
+            await audio.play();
+
+            audio.onended = () => {
+              btn.innerText = "Start Talking";
+              btn.disabled = false;
+              isRecording = false;
+              setStatus("✅ Ready.");
+              resolve();
+            };
+
+          } catch (err) {
+            console.error(err);
+            btn.innerText = "Start Talking";
+            btn.disabled = false;
+            isRecording = false;
+            setStatus(`❌ ${err.message}`);
+            resolve();
+          }
+        }, { once: true });
+
+        try {
+          if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.requestData();
+            mediaRecorder.stop();
+          }
+        } catch (err) {
+          console.error(err);
+          btn.innerText = "Start Talking";
+          btn.disabled = false;
+          isRecording = false;
+          setStatus(`❌ Stop error: ${err.message}`);
+          resolve();
+        }
+      });
+    }
+
+    // -----------------------------
+    // CLICK HANDLER (with a visible click test)
+    // -----------------------------
+    btn.addEventListener("click", async () => {
+      console.log("✅ Button click detected. isRecording =", isRecording);
+
+      // If clicking does NOTHING, you will NOT see this log.
+      // That means your JS isn't running or click is blocked.
+
       try {
-        setStatus("Requesting microphone access…");
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (!isRecording) {
+          await startRecording();
+        } else {
+          await stopRecordingAndSend();
+        }
+      } catch (err) {
+        console.error(err);
+        btn.innerText = "Start Talking";
+        btn.disabled = false;
+        isRecording = false;
 
-        let options = { mimeType: "audio/webm; codecs=opus" };
-        if (!MediaRecorder.isTypeSupported(options.mimeType)) options = { mimeType: "audio/webm" };
-        if (options.mimeType && !MediaRecorder.isTypeSupported(options.mimeType)) options = {};
-
-        mediaRecorder = new MediaRecorder(stream, options);
-        audioChunks = [];
-
+        // Helpful message for insecure contexts:
+        const insecure = (location.protocol !== "https:" && location.hostname !== "localhost");
+        if (insecure) {
+          setStatus("❌ Mic blocked because site is not HTTPS. Use HTTPS (GitHub Pages) or localhost.");
+        } else {
+          setStatus(`❌ ${err.message}`);
+        }
+      }
+    });
+  </script>
+</body>
+</html>
