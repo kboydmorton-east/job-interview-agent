@@ -139,6 +139,7 @@
     input[type="range"]{
       width: 200px;
     }
+
     code{
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
       font-size:.92rem;
@@ -243,7 +244,7 @@ Start the conversation by asking:
 
     function addChat(role, text) {
       const wrapper = document.createElement("div");
-      wrapper.className = `row ${role === "student" ? "studentRow" : "botRow"}`;
+      wrapper.className = "row";
 
       const bubble = document.createElement("div");
       bubble.className = `msg ${role === "student" ? "student" : "bot"}`;
@@ -257,7 +258,6 @@ Start the conversation by asking:
       wrapper.appendChild(meta);
       chatEl.appendChild(wrapper);
 
-      // auto-scroll to newest message
       chatEl.scrollTop = chatEl.scrollHeight;
     }
 
@@ -268,6 +268,9 @@ Start the conversation by asking:
     let audioChunks = [];
     let isRecording = false;
     let stream = null;
+
+    // ✅ Track currently playing audio so slider can affect it LIVE
+    let currentAudio = null;
 
     function blobToBase64(blob) {
       return new Promise((resolve, reject) => {
@@ -340,29 +343,41 @@ Start the conversation by asking:
 
             const result = await response.json();
 
-            // Update memory
+            // Update memory + persistent chat log
             if (result.transcript) {
               messages.push({ role: "user", content: result.transcript });
-              addChat("student", result.transcript);   // ✅ persistent chat log
+              addChat("student", result.transcript);
             }
             if (result.assistant_text) {
               messages.push({ role: "assistant", content: result.assistant_text });
-              addChat("bot", result.assistant_text);   // ✅ persistent chat log
+              addChat("bot", result.assistant_text);
             }
 
             setStatus("Playing response…");
 
-            // MeloTTS returns MP3 base64 (audio/mpeg). [2](https://developers.cloudflare.com/workers-ai/models/melotts/)
+            // MeloTTS returns MP3 base64
             const mime = result.audio_mime || "audio/mpeg";
             const audio = new Audio(`data:${mime};base64,${result.audio_base64}`);
 
-            // ✅ Slow down speech using playbackRate (HTMLMediaElement.playbackRate). [1](https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/playbackRate)
+            // ✅ store so slider can update speed mid-play
+            currentAudio = audio;
+
+            // ✅ Apply speed right before playing
             const rate = parseFloat(speedEl.value) || 1.0;
-            audio.playbackRate = 0.90;
+
+            // playbackRate controls media speed [1](https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/playbackRate)
+            audio.playbackRate = rate;
+            audio.defaultPlaybackRate = rate;
+
+            // Optional: keep pitch more natural when supported
+            try { audio.preservesPitch = true; } catch (e) {}
+            try { audio.mozPreservesPitch = true; } catch (e) {}
+            try { audio.webkitPreservesPitch = true; } catch (e) {}
 
             await audio.play();
 
             audio.onended = () => {
+              currentAudio = null;
               btn.innerText = "Start Talking";
               btn.disabled = false;
               isRecording = false;
@@ -372,6 +387,7 @@ Start the conversation by asking:
 
           } catch (err) {
             console.error(err);
+            currentAudio = null;
             btn.innerText = "Start Talking";
             btn.disabled = false;
             isRecording = false;
@@ -387,6 +403,7 @@ Start the conversation by asking:
           }
         } catch (err) {
           console.error(err);
+          currentAudio = null;
           btn.innerText = "Start Talking";
           btn.disabled = false;
           isRecording = false;
@@ -408,6 +425,7 @@ Start the conversation by asking:
         }
       } catch (err) {
         console.error(err);
+        currentAudio = null;
         btn.innerText = "Start Talking";
         btn.disabled = false;
         isRecording = false;
@@ -420,13 +438,20 @@ Start the conversation by asking:
       setStatus("Ready. (Chat cleared)");
     });
 
+    // ✅ LIVE speed updates: affects current audio immediately (if playing)
     speedEl.addEventListener("input", () => {
-      speedValEl.textContent = `${parseFloat(speedEl.value).toFixed(2)}×`;
+      const rate = parseFloat(speedEl.value);
+      speedValEl.textContent = `${rate.toFixed(2)}×`;
+
+      if (currentAudio) {
+        currentAudio.playbackRate = rate;
+        currentAudio.defaultPlaybackRate = rate;
+        console.log("Updated playbackRate to:", rate);
+      }
     });
 
-    // Optional: show an initial bot message in the chat log (text only)
+    // Optional: show initial bot prompt in chat log (text only)
     addChat("bot", "What job or career did you choose to research?");
   </script>
 </body>
 </html>
-
