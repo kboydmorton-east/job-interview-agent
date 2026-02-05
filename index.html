@@ -358,7 +358,7 @@ Start the conversation by asking:
 
             // ✅ Slow down speech using playbackRate (HTMLMediaElement.playbackRate). [1](https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/playbackRate)
             const rate = parseFloat(speedEl.value) || 1.0;
-            audio.playbackRate = rate;
+            audio.playbackRate = 0.90;
 
             await audio.play();
 
@@ -429,3 +429,4 @@ Start the conversation by asking:
   </script>
 </body>
 </html>
+
