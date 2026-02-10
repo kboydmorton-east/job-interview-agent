@@ -27,21 +27,16 @@
     }
 
     button{
-      font-size:1.25rem;
-      padding:16px 28px;
+      font-size:1.1rem;
+      padding:12px 20px;
       border:none;
-      border-radius:12px;
+      border-radius:10px;
       background:#0078d4;
       color:white;
       cursor:pointer;
     }
     button:active{ background:#005a9e; }
     button:disabled{ opacity:.7; cursor:not-allowed; }
-
-    .secondary{
-      background:#666;
-    }
-    .secondary:active{ background:#444; }
 
     #status{
       font-size:.95rem;
@@ -80,7 +75,8 @@
       height: 46vh;
       min-height: 260px;
       max-height: 520px;
-      overflow-y: auto;
+      overflow-y: auto;       /* scrollable */
+      scroll-behavior: smooth;/* smooth scrolling */
       padding: 12px;
       display:flex;
       flex-direction:column;
@@ -151,7 +147,7 @@
 
   <div id="controls">
     <button id="startBtn">Start Talking</button>
-    <button id="clearBtn" class="secondary" type="button">Clear Chat</button>
+    <button id="copyBtn" title="Copy the full transcript">Copy Chat</button>
   </div>
 
   <div id="speedBox">
@@ -173,7 +169,7 @@
 
   <script>
     // -----------------------------
-    // 1) SYSTEM PROMPT
+    // 1) SYSTEM PROMPT (already says "Speak only in English.")
     // -----------------------------
     const systemPrompt = `
 You are a supportive conversation partner for 9th-grade multilingual learners at WIDA Level 2. You are speaking one-on-one with a student about a job or career they researched. The student will speak their responses aloud, so expect short or simple answers.
@@ -216,7 +212,7 @@ Start the conversation by asking:
     // 3) UI ELEMENTS + HELPERS
     // -----------------------------
     const btn = document.getElementById("startBtn");
-    const clearBtn = document.getElementById("clearBtn");
+    const copyBtn = document.getElementById("copyBtn");
     const statusEl = document.getElementById("status");
     const chatEl = document.getElementById("chat");
     const speedEl = document.getElementById("speed");
@@ -254,11 +250,53 @@ Start the conversation by asking:
       meta.className = "meta";
       meta.textContent = `${role === "student" ? "Student" : "CoachBot"} • ${nowTime()}`;
 
+      wrapper.dataset.role = role === "student" ? "Student" : "CoachBot";
+      wrapper.dataset.time = nowTime();
+
       wrapper.appendChild(bubble);
       wrapper.appendChild(meta);
       chatEl.appendChild(wrapper);
 
-      chatEl.scrollTop = chatEl.scrollHeight;
+      chatEl.scrollTop = chatEl.scrollHeight; // keep latest visible
+    }
+
+    // Build a plain-text export of the entire chat
+    function buildChatTranscript() {
+      const rows = Array.from(chatEl.querySelectorAll(".row"));
+      if (!rows.length) return "";
+
+      const lines = rows.map(row => {
+        const role = row.dataset.role || "Speaker";
+        const time = row.dataset.time || "";
+        const bubble = row.querySelector(".msg");
+        const div = document.createElement("div");
+        div.innerHTML = bubble ? bubble.innerHTML : "";
+        const text = (div.textContent || "").trim();
+        return `${role} [${time}]: ${text}`;
+      });
+
+      return lines.join("\n");
+    }
+
+    // Copy helper with fallback
+    async function copyTextToClipboard(text) {
+      if (!text) throw new Error("There is no chat content to copy yet.");
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      ta.setAttribute("readonly", "");
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } finally {
+        document.body.removeChild(ta);
+      }
     }
 
     // -----------------------------
@@ -269,7 +307,7 @@ Start the conversation by asking:
     let isRecording = false;
     let stream = null;
 
-    // ✅ Track currently playing audio so slider can affect it LIVE
+    // Track currently playing audio so the speed slider can affect it live
     let currentAudio = null;
 
     function blobToBase64(blob) {
@@ -310,7 +348,6 @@ Start the conversation by asking:
       return new Promise((resolve) => {
         mediaRecorder.addEventListener("stop", async () => {
           try {
-            // stop mic so it doesn't look like it keeps recording
             if (stream) {
               stream.getTracks().forEach(t => t.stop());
               stream = null;
@@ -318,13 +355,11 @@ Start the conversation by asking:
 
             const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
             setStatus(`Captured audio: <code>${audioBlob.size}</code> bytes`);
-
             if (audioBlob.size < 800) throw new Error("Audio too small. Speak longer/louder.");
 
             const audio_base64 = await blobToBase64(audioBlob);
 
             setStatus("Sending to Cloudflare Worker (Workers AI)…");
-
             const response = await fetch("https://cool-field-e495.kboydmorton.workers.dev/", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -355,21 +390,17 @@ Start the conversation by asking:
 
             setStatus("Playing response…");
 
-            // MeloTTS returns MP3 base64
+            // Play returned MP3 (MeloTTS)
             const mime = result.audio_mime || "audio/mpeg";
             const audio = new Audio(`data:${mime};base64,${result.audio_base64}`);
-
-            // ✅ store so slider can update speed mid-play
             currentAudio = audio;
 
-            // ✅ Apply speed right before playing
+            // Apply speed
             const rate = parseFloat(speedEl.value) || 1.0;
-
-            // playbackRate controls media speed [1](https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/playbackRate)
             audio.playbackRate = rate;
             audio.defaultPlaybackRate = rate;
 
-            // Optional: keep pitch more natural when supported
+            // (Optional) keep pitch natural when supported
             try { audio.preservesPitch = true; } catch (e) {}
             try { audio.mozPreservesPitch = true; } catch (e) {}
             try { audio.webkitPreservesPitch = true; } catch (e) {}
@@ -433,16 +464,22 @@ Start the conversation by asking:
       }
     });
 
-    clearBtn.addEventListener("click", () => {
-      chatEl.innerHTML = "";
-      setStatus("Ready. (Chat cleared)");
+    // Copy entire chat transcript
+    copyBtn.addEventListener("click", async () => {
+      try {
+        const transcript = buildChatTranscript();
+        await copyTextToClipboard(transcript);
+        setStatus("Copied chat transcript to clipboard.");
+      } catch (err) {
+        console.error(err);
+        setStatus(`❌ Copy failed: ${escapeHtml(err.message)}`);
+      }
     });
 
-    // ✅ LIVE speed updates: affects current audio immediately (if playing)
+    // Live speed updates during playback
     speedEl.addEventListener("input", () => {
       const rate = parseFloat(speedEl.value);
       speedValEl.textContent = `${rate.toFixed(2)}×`;
-
       if (currentAudio) {
         currentAudio.playbackRate = rate;
         currentAudio.defaultPlaybackRate = rate;
